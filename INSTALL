@@ -1,0 +1,10 @@
+Begin by installing MFEM
+
+We will need the CUDA build of MFEM. The parallel version with hypre and METIS may be useful.
+
+In the compile script, point the command towards the mfem-x.x build directory. Additionally, it may be useful to create a link to the glvis executable from the DeNT directory.
+
+After the code is compiled, it can be run (preferably on a compute node).
+
+./glvis -m 1_10x1_10.mesh -g output/1/sf.gf
+The above command can be used to visualize the results at a single time step. The mesh file may change for other test problems.
