@@ -14,6 +14,25 @@ double u0_function(const mfem::Vector &x);
 
 int main(int argc, char *argv[]) {
 	
+
+        // Enable GPU (when executed with option -d cuda)
+        const char *device_config = "cpu";
+
+        mfem::OptionsParser args(argc, argv);
+        args.AddOption(&device_config, "-d", "--device",
+            "Device configuration string, see Device::Configure().");
+
+        args.Parse();
+        if (!args.Good())
+        {
+          args.PrintUsage(std::cout);
+          return 1;
+        }
+        args.PrintOptions(std::cout);
+
+        mfem::Device device(device_config);
+        device.Print();
+
 	// Read Input Files
 	// Geometry
 	mfem::Mesh mesh("1_10x1_10.mesh", 1, 1);
@@ -255,14 +274,14 @@ int main(int argc, char *argv[]) {
 		//absorption *= (SigmaT-SigmaS);
 		//mfem::DivergenceGridFunctionCoefficient divcurrent(&current);
 	
-		//write solution at step k to output file
-		system(("mkdir -p output/"+std::to_string(k)).c_str());
-		std::ofstream osol("output/"+std::to_string(k)+"/sf.gf");
+                //write solution at step k to output file
+                system(("mkdir -p /gpfs/wolf/gen167/scratch/reynolaa/output/"+std::to_string(k)).c_str());
+                std::ofstream osol("/gpfs/wolf/gen167/scratch/reynolaa/output/"+std::to_string(k)+"/sf.gf");
 		osol.precision(16);
 		scalarflux.Save(osol);
 		osol.close();
 		for (int d = 0; d < dim; d++) {
-			std::ofstream osol("output/"+std::to_string(k)+"/curr"+std::to_string(d)+".gf");
+                        std::ofstream osol("/gpfs/wolf/gen167/scratch/reynolaa/output/"+std::to_string(k)+"/curr"+std::to_string(d)+".gf");
 			osol.precision(16);
 			currentcom[d]->Save(osol);
 			osol.close();
