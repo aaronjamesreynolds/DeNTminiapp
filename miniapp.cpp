@@ -104,7 +104,7 @@ int main(int argc, char *argv[]) {
   fes.GetEssentialTrueDofs(ess_bdr, ess_tdof_list);
 
 	std::vector<mfem::BilinearForm*> A;
-	for ( int m = 0; m < M; m++) {
+	for ( int m = 0; m < M; m++) { //For each discrete ordinate
 		mfem::VectorConstantCoefficient Omega(Quad[m]);
 		
 		mfem::BilinearForm *S = new mfem::BilinearForm(&fes);
