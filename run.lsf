@@ -1,0 +1,14 @@
+#!/bin/bash
+
+#BSUB -P GEN167
+#BSUB -W 1:00
+#BSUB -nnodes 1
+#BSUB -alloc_flags gpudefault
+#BSUB -J DeNTapp
+#BSUB -o %J.out
+#BSUB -e %J.err
+
+date
+module load cuda
+module load amgx
+jsrun -n 1 -g 1 ./DeNTapp -d cuda -m 1_10x1_10.mesh --amgx-file FGMRES.json

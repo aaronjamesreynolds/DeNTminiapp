@@ -1,5 +1,5 @@
 // Charles Goodman
-// 18 October 2021
+// 26 October 2021
 // Deterministic Transport Solver
 // monoenergetic, 1,2,3-D, implicit time, discrete ordinates
 
@@ -13,10 +13,40 @@ double u0_function(const mfem::Vector &x);
 
 
 int main(int argc, char *argv[]) {
+
+
+	// Enable GPU (when executed with option -d cuda)
+	const char *mesh_file = "1_10x1_10.mesh";
+	int order = 1;
+	const char *device_config = "cpu";
+	const char* amgx_json_file = "FGMRES.json"; // JSON file for AmgX
+
+	mfem::OptionsParser args(argc, argv);
+        args.AddOption(&mesh_file, "-m", "--mesh",
+        	"Mesh file to use.");
+   	args.AddOption(&order, "-o", "--order",
+        	"Finite element order (polynomial degree) or -1 for"
+        	" isoparametric space.");
+	args.AddOption(&device_config, "-d", "--device",
+        	"Device configuration string, see Device::Configure().");
+	args.AddOption(&amgx_json_file, "--amgx-file", "--amgx-file",
+        	"AMGX solver config file (overrides --amgx-solver, --amgx-verbose)");
+
+	args.Parse();
+        if (!args.Good())
+        {
+          args.PrintUsage(std::cout);
+          return 1;
+        }
+        args.PrintOptions(std::cout);
+
+	mfem::Device device(device_config);
+        device.Print();
+
 	
 	// Read Input Files
 	// Geometry
-	mfem::Mesh mesh("1_10x1_10.mesh", 1, 1);
+	mfem::Mesh mesh(mesh_file, 1, 1);
 	int dim = mesh.Dimension();
 
 	// Problem Data
@@ -86,13 +116,12 @@ int main(int argc, char *argv[]) {
 	}
 	quadf.close();
 
-	int kend = 50;
+	int kend = 5;
 	int k = 0;
 	double dt = .02;
 	double v = 30; //52; // cm/shake for 14 MeV neutron
 	
 	//Define the discontinous DG finite element space of given polynomial order on the mesh
-	int order = 1; //This is Bilinear Discontinuous for 2D problems
 	mfem::DG_FECollection fec(order, dim, mfem::BasisType::GaussLobatto);
 	mfem::FiniteElementSpace fes(&mesh, &fec);
 	mfem::FiniteElementSpace vfes(&mesh, &fec, dim);
@@ -101,7 +130,8 @@ int main(int argc, char *argv[]) {
 	mfem::Array<int> ess_tdof_list, ess_bdr(mesh.bdr_attributes.Max());
 	ess_bdr = 0;
 	ess_bdr[0] = 1;
-  fes.GetEssentialTrueDofs(ess_bdr, ess_tdof_list);
+  	fes.GetEssentialTrueDofs(ess_bdr, ess_tdof_list);
+
 
 	std::vector<mfem::BilinearForm*> A;
 	for ( int m = 0; m < M; m++) { //For each discrete ordinate
@@ -112,16 +142,22 @@ int main(int argc, char *argv[]) {
 		S->AddDomainIntegrator(new mfem::MassIntegrator(timeconst));
 		S->AddDomainIntegrator(new mfem::ConvectionIntegrator(Omega, 1.0));
 		S->AddDomainIntegrator(new mfem::MassIntegrator(sigmaT));
-		S->AddInteriorFaceIntegrator(new mfem::TransposeIntegrator(new mfem::DGTraceIntegrator(Omega, -1.0, 0.5)));
-		S->AddBdrFaceIntegrator(new mfem::TransposeIntegrator(new mfem::DGTraceIntegrator(Omega, -1.0, 0.5)));
+		S->AddInteriorFaceIntegrator(new mfem::TransposeIntegrator(new mfem::DGTraceIntegrator(Omega, -1.0, 0.5))); //criterion of DG interior bounds
+		S->AddBdrFaceIntegrator(new mfem::TransposeIntegrator(new mfem::DGTraceIntegrator(Omega, -1.0, 0.5))); //criterion for DG external bounds //Not compatible with pa
 		
 		S->Assemble();
-		S->Finalize();
+		S->Finalize(); //Not for pa?
 		
 		//A is a vector of Matrix such that Ax = b
 		A.push_back(S);
 
 	}
+      				
+	//Initialize AmgX solver
+	mfem::AmgXSolver amgx;
+      	amgx.ReadParameters(amgx_json_file, mfem::AmgXSolver::EXTERNAL);
+      	amgx.InitSerial();
+
 	
 	//Set initial condition
 	mfem::FunctionCoefficient u0(u0_function);
@@ -189,22 +225,17 @@ int main(int argc, char *argv[]) {
 				b.AddBdrFaceIntegrator(new mfem::BoundaryFlowIntegrator(inflow, Omega, -1.0, -0.5));
 				b.Assemble();
 		
-				//A[m] is a pointer
-				//Need to perform u = u + Ainv*b	
-				mfem::BlockILU ilu(A[m]->SpMat());
-
-				mfem::GMRESSolver solver;
-				solver.iterative_mode=false;
-				solver.SetRelTol(1e-14);
-				solver.SetAbsTol(0.0);
-				solver.SetMaxIter(100);
-				solver.SetPrintLevel(0);
-				solver.SetPreconditioner(ilu);
-				solver.SetOperator(A[m]->SpMat());
+				//Setup and Solve System
+				mfem::OperatorPtr A1;
+				mfem::Vector B1, X1;
 				
-				u[m] = 0;
-				solver.Mult(b, u[m]);
-			
+				A[m]->FormLinearSystem(ess_tdof_list, u[m], b, A1, X1, B1);
+				
+				amgx.SetOperator(*A1.As<mfem::SparseMatrix>());
+         			amgx.Mult(B1,X1);
+
+				A[m]->RecoverFEMSolution(X1, b, u[m]);
+								
 				
 				//need to use quadrature weights
 				mfem::GridFunction tmpgf = u[m];
@@ -234,7 +265,7 @@ int main(int argc, char *argv[]) {
 			std::cout << scalarflux.ComputeMaxError(oldscalarfluxc,irs) << std::endl;
 
 			//end the loop when flux is converged
-			if (scalarflux.ComputeMaxError(oldscalarfluxc,irs) < 1E-12) {
+			if (scalarflux.ComputeMaxError(oldscalarfluxc,irs) < 1E-8) {
 				std::cout << inneriterations << std::endl;
 				std::cout << scalarflux.ComputeMaxError(oldscalarfluxc,irs) << std::endl;
 				break;
@@ -249,20 +280,14 @@ int main(int argc, char *argv[]) {
 		}
 		
 	
-		//compute local residuals
-		//mfem::GridFunction absorption(&fes);
-		//absorption = scalarflux;
-		//absorption *= (SigmaT-SigmaS);
-		//mfem::DivergenceGridFunctionCoefficient divcurrent(&current);
-	
 		//write solution at step k to output file
-		system(("mkdir -p output/"+std::to_string(k)).c_str());
-		std::ofstream osol("output/"+std::to_string(k)+"/sf.gf");
+		system(("mkdir -p /gpfs/wolf/gen167/scratch/cegoodman/output/"+std::to_string(k)).c_str());
+		std::ofstream osol("/gpfs/wolf/gen167/scratch/cegoodman/output/"+std::to_string(k)+"/sf.gf");
 		osol.precision(16);
 		scalarflux.Save(osol);
 		osol.close();
 		for (int d = 0; d < dim; d++) {
-			std::ofstream osol("output/"+std::to_string(k)+"/curr"+std::to_string(d)+".gf");
+			std::ofstream osol("/gpfs/wolf/gen167/scratch/cegoodman/output/"+std::to_string(k)+"/curr"+std::to_string(d)+".gf");
 			osol.precision(16);
 			currentcom[d]->Save(osol);
 			osol.close();
