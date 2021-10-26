@@ -1,2 +1,2 @@
-g++ -O3 -std=c++11 -I../../mfem-4.2 miniapp.cpp -L../../mfem-4.2 -lmfem -o DeNTapp
+nvcc -O3 -std=c++11 -ccbin mpicxx -I../tpls/mfem-4.2 -I../tpls/hypre/src/hypre/include  -I/autofs/nccsopen-svm1_sw/ascent/.swci/1-compute/opt/spack/20180914/linux-rhel7-ppc64le/xl-16.1.1-7/amgx-2.1.0-1-7u4lc5bqibu7y4njgp3pa6ql7h2ctqfw/include miniapp.cpp -L../tpls/mfem-4.2 -lmfem -L../tpls/hypre/src/hypre/lib -lHYPRE -lcusparse -lcurand -L../tpls/metis-4.0 -lmetis -lcusparse -lcusolver -lcublas -lnvToolsExt -lrt -L/autofs/nccsopen-svm1_sw/ascent/.swci/1-compute/opt/spack/20180914/linux-rhel7-ppc64le/xl-16.1.1-7/amgx-2.1.0-1-7u4lc5bqibu7y4njgp3pa6ql7h2ctqfw/lib -lamgx -o DeNTapp
 
